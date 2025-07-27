@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Spot - Bullish Reversal Scanner</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        h1 {
+            color: #f0b90b;
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 24px;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        button {
+            background-color: #f0b90b;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #d8a600;
+        }
+        select {
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .signal-card {
+            border-left: 4px solid #4CAF50;
+            background-color: #f6fff6;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .coin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .coin-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .price-change {
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background-color: #FFEBEE;
+            color: #F44336;
+        }
+        .signal-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+        .detail-item {
+            background-color: white;
+            padding: 6px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .detail-label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 2px;
+        }
+        .detail-value {
+            font-weight: 600;
+        }
+        .loading {
+            text-align: center;
+            padding: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+        .last-updated {
+            text-align: right;
+            font-size: 11px;
+            color: #999;
+            margin-top: 15px;
+        }
+        .confidence-meter {
+            height: 6px;
+            background-color: #eee;
+            border-radius: 3px;
+            margin-top: 3px;
+            overflow: hidden;
+        }
+        .confidence-level {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Binance Spot - Top Losers Bullish Reversal Scanner</h1>
+        
+        <div class="controls">
+            <div>
+                <label for="timeframe">Timeframe: </label>
+                <select id="timeframe">
+                    <option value="1h">1 Hour</option>
+                    <option value="4h">4 Hours</option>
+                    <option value="1d" selected>1 Day</option>
+                </select>
+                
+                <label for="topCount" style="margin-left: 10px;">Analyze Top: </label>
+                <select id="topCount">
+                    <option value="5">5 Losers</option>
+                    <option value="10" selected>10 Losers</option>
+                    <option value="15">15 Losers</option>
+                </select>
+            </div>
+            
+            <button id="scanBtn">Find Long Opportunities</button>
+        </div>
+        
+        <div id="resultsContainer">
+            <div class="loading">Click "Find Long Opportunities" to scan Binance spot markets</div>
+        </div>
+        
+        <div class="last-updated" id="lastUpdated"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const scanBtn = document.getElementById('scanBtn');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const timeframeSelect = document.getElementById('timeframe');
+            const topCountSelect = document.getElementById('topCount');
+            const lastUpdatedEl = document.getElementById('lastUpdated');
+            
+            scanBtn.addEventListener('click', scanForBullishReversals);
+            
+            async function scanForBullishReversals() {
+                resultsContainer.innerHTML = '<div class="loading">Scanning Binance spot markets for bullish reversal opportunities...</div>';
+                
+                try {
+                    // Get price change data for all symbols
+                    const priceChanges = await fetchPriceChanges();
+                    
+                    // Filter USDT pairs and sort by worst performers (spot trading only)
+                    const spotPairs = priceChanges
+                        .filter(pc => pc.symbol.endsWith('USDT') && !pc.symbol.includes('UP') && !pc.symbol.includes('DOWN'))
+                        .sort((a, b) => parseFloat(a.priceChangePercent) - parseFloat(b.priceChangePercent));
+                    
+                    const topCount = parseInt(topCountSelect.value);
+                    const topLosers = spotPairs.slice(0, topCount);
+                    
+                    // Analyze each top loser for potential bullish reversal
+                    resultsContainer.innerHTML = '';
+                    
+                    const timeframe = timeframeSelect.value;
+                    const analysisPromises = topLosers.map(loser => analyzeForBullishReversal(loser.symbol, timeframe));
+                    const analyses = await Promise.all(analysisPromises);
+                    
+                    // Display results
+                    analyses.forEach((analysis, index) => {
+                        if (analysis && analysis.direction === 'up') {
+                            resultsContainer.appendChild(createBullishSignalCard(topLosers[index], analysis));
+                        }
+                    });
+                    
+                    if (resultsContainer.children.length === 0) {
+                        resultsContainer.innerHTML = '<div class="loading">No strong bullish reversal signals found. Try again later or check lower timeframes.</div>';
+                    }
+                    
+                    // Update last updated time
+                    lastUpdatedEl.textContent = `Last updated: ${new Date().toLocaleString()}`;
+                    
+                } catch (error) {
+                    console.error('Error scanning for reversals:', error);
+                    resultsContainer.innerHTML = `<div class="loading" style="color: red;">Error: ${error.message}</div>`;
+                }
+            }
+            
+            async function fetchPriceChanges() {
+                const response = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+                return await response.json();
+            }
+            
+            async function analyzeForBullishReversal(symbol, timeframe) {
+                try {
+                    // Get candlestick data
+                    const interval = timeframe === '1h' ? '1h' : timeframe === '4h' ? '4h' : '1d';
+                    const limit = 50;
+                    
+                    const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+                    const candles = await response.json();
+                    
+                    // Convert to numerical values
+                    const closePrices = candles.map(c => parseFloat(c[4]));
+                    const highPrices = candles.map(c => parseFloat(c[2]));
+                    const lowPrices = candles.map(c => parseFloat(c[3]));
+                    
+                    // Trend detection
+                    const recentTrend = detectTrend(closePrices.slice(-10));
+                    const overallTrend = detectTrend(closePrices);
+                    
+                    // Only consider if recent trend is up while overall is down
+                    if (!(recentTrend.direction === 'up' && overallTrend.direction === 'down')) {
+                        return null;
+                    }
+                    
+                    // Calculate support/resistance
+                    const support = Math.min(...lowPrices.slice(-20));
+                    const currentPrice = closePrices[closePrices.length - 1];
+                    
+                    // Price should be near support (within 2%)
+                    const distanceToSupport = (currentPrice - support) / currentPrice * 100;
+                    if (distanceToSupport > 2) {
+                        return null;
+                    }
+                    
+                    // Calculate RSI
+                    const rsi = calculateSimpleRSI(closePrices);
+                    if (rsi > 35) { // Not oversold enough
+                        return null;
+                    }
+                    
+                    // Calculate entry, targets and stop loss
+                    const entry = currentPrice;
+                    const stopLoss = support * 0.99; // 1% below support
+                    const risk = entry - stopLoss;
+                    
+                    // Conservative targets (1:1.5 and 1:2 risk:reward)
+                    const target1 = entry + risk * 1.5;
+                    const target2 = entry + risk * 2;
+                    
+                    return {
+                        symbol,
+                        direction: 'up',
+                        currentPrice: entry,
+                        target1,
+                        target2,
+                        stopLoss,
+                        rsi,
+                        confidence: calculateConfidence(closePrices, distanceToSupport, rsi)
+                    };
+                    
+                } catch (error) {
+                    console.error(`Error analyzing ${symbol}:`, error);
+                    return null;
+                }
+            }
+            
+            function detectTrend(prices) {
+                if (prices.length < 2) return { direction: 'neutral', strength: 0 };
+                
+                const lastPrice = prices[prices.length - 1];
+                const prevPrice = prices[prices.length - 2];
+                
+                return {
+                    direction: lastPrice > prevPrice ? 'up' : 'down',
+                    strength: Math.abs((lastPrice - prevPrice) / prevPrice * 100)
+                };
+            }
+            
+            function calculateSimpleRSI(prices, period = 14) {
+                if (prices.length < period + 1) return 50;
+                
+                let gains = 0;
+                let losses = 0;
+                
+                for (let i = 1; i < period + 1; i++) {
+                    const change = prices[i] - prices[i - 1];
+                    if (change > 0) {
+                        gains += change;
+                    } else {
+                        losses += Math.abs(change);
+                    }
+                }
+                
+                const avgGain = gains / period;
+                const avgLoss = losses / period;
+                
+                if (avgLoss === 0) return 100;
+                const rs = avgGain / avgLoss;
+                return 100 - (100 / (1 + rs));
+            }
+            
+            function calculateConfidence(prices, distanceToSupport, rsi) {
+                // Confidence based on:
+                // 1. How oversold (lower RSI = higher confidence)
+                // 2. How close to support (closer = higher confidence)
+                // 3. Recent volume (not implemented here for simplicity)
+                
+                const rsiFactor = Math.max(0, (30 - rsi) / 30 * 50); // Max 50 points
+                const supportFactor = Math.max(0, (2 - distanceToSupport) / 2 * 50); // Max 50 points
+                
+                return Math.min(90, Math.max(20, rsiFactor + supportFactor));
+            }
+            
+            function createBullishSignalCard(coinData, analysis) {
+                const card = document.createElement('div');
+                card.className = 'signal-card';
+                
+                const priceChange = parseFloat(coinData.priceChangePercent);
+                const priceChangeText = priceChange.toFixed(2) + '%';
+                
+                const confidence = Math.round(analysis.confidence);
+                
+                // Calculate percentages for targets and stop loss
+                const target1Percent = ((analysis.target1 - analysis.currentPrice) / analysis.currentPrice * 100).toFixed(2);
+                const target2Percent = ((analysis.target2 - analysis.currentPrice) / analysis.currentPrice * 100).toFixed(2);
+                const stopLossPercent = ((analysis.stopLoss - analysis.currentPrice) / analysis.currentPrice * 100).toFixed(2);
+                
+                card.innerHTML = `
+                    <div class="coin-header">
+                        <div class="coin-name">${coinData.symbol}</div>
+                        <div class="price-change">${priceChangeText}</div>
+                    </div>
+                    
+                    <div style="font-size: 12px; margin-bottom: 5px;">
+                        <span>Confidence: ${confidence}%</span>
+                        <div class="confidence-meter">
+                            <div class="confidence-level" style="width: ${confidence}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="signal-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Current Price</div>
+                            <div class="detail-value">${analysis.currentPrice.toFixed(6)}</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">RSI (14)</div>
+                            <div class="detail-value">${analysis.rsi.toFixed(1)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="signal-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Buy Zone</div>
+                            <div class="detail-value">${analysis.currentPrice.toFixed(6)}</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Target 1</div>
+                            <div class="detail-value">${analysis.target1.toFixed(6)} <span style="color: #4CAF50">(+${target1Percent}%)</span></div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Target 2</div>
+                            <div class="detail-value">${analysis.target2.toFixed(6)} <span style="color: #4CAF50">(+${target2Percent}%)</span></div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Stop Loss</div>
+                            <div class="detail-value">${analysis.stopLoss.toFixed(6)} <span style="color: #F44336">(${stopLossPercent}%)</span></div>
+                        </div>
+                    </div>
+                `;
+                
+                return card;
+            }
+        });
+    </script>
+</body>
+</html>
