@@ -123,15 +123,16 @@
 </head>
 <body>
     <div class="container">
-        <h1>Binance Spot - Top Losers Bullish Reversal Scanner</h1>
+        <h1>Binance Spot - Bullish Reversal Scanner</h1>
         
         <div class="controls">
             <div>
                 <label for="timeframe">Timeframe: </label>
                 <select id="timeframe">
+                    <option value="15m">15 Minutes</option>
                     <option value="1h">1 Hour</option>
                     <option value="4h">4 Hours</option>
-                    <option value="1d" selected>1 Day</option>
+                    <option value="1d">1 Day</option>
                 </select>
                 
                 <label for="topCount" style="margin-left: 10px;">Analyze Top: </label>
@@ -212,8 +213,8 @@
             async function analyzeForBullishReversal(symbol, timeframe) {
                 try {
                     // Get candlestick data
-                    const interval = timeframe === '1h' ? '1h' : timeframe === '4h' ? '4h' : '1d';
-                    const limit = 50;
+                    const interval = getIntervalFromTimeframe(timeframe);
+                    const limit = timeframe === '15m' ? 100 : 50; // More candles for lower timeframes
                     
                     const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
                     const candles = await response.json();
@@ -265,12 +266,22 @@
                         target2,
                         stopLoss,
                         rsi,
-                        confidence: calculateConfidence(closePrices, distanceToSupport, rsi)
+                        confidence: calculateConfidence(closePrices, distanceToSupport, rsi, timeframe)
                     };
                     
                 } catch (error) {
                     console.error(`Error analyzing ${symbol}:`, error);
                     return null;
+                }
+            }
+            
+            function getIntervalFromTimeframe(timeframe) {
+                switch(timeframe) {
+                    case '15m': return '15m';
+                    case '1h': return '1h';
+                    case '4h': return '4h';
+                    case '1d': return '1d';
+                    default: return '1h';
                 }
             }
             
@@ -309,16 +320,26 @@
                 return 100 - (100 / (1 + rs));
             }
             
-            function calculateConfidence(prices, distanceToSupport, rsi) {
+            function calculateConfidence(prices, distanceToSupport, rsi, timeframe) {
                 // Confidence based on:
                 // 1. How oversold (lower RSI = higher confidence)
                 // 2. How close to support (closer = higher confidence)
-                // 3. Recent volume (not implemented here for simplicity)
+                // 3. Timeframe (higher timeframes get more confidence)
                 
                 const rsiFactor = Math.max(0, (30 - rsi) / 30 * 50); // Max 50 points
-                const supportFactor = Math.max(0, (2 - distanceToSupport) / 2 * 50); // Max 50 points
+                const supportFactor = Math.max(0, (2 - distanceToSupport) / 2 * 30); // Max 30 points
                 
-                return Math.min(90, Math.max(20, rsiFactor + supportFactor));
+                // Timeframe weight (higher timeframes get more confidence)
+                let timeframeFactor;
+                switch(timeframe) {
+                    case '15m': timeframeFactor = 10; break;
+                    case '1h': timeframeFactor = 15; break;
+                    case '4h': timeframeFactor = 25; break;
+                    case '1d': timeframeFactor = 30; break;
+                    default: timeframeFactor = 15;
+                }
+                
+                return Math.min(95, Math.max(20, rsiFactor + supportFactor + timeframeFactor));
             }
             
             function createBullishSignalCard(coinData, analysis) {
